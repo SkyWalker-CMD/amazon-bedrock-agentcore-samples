@@ -1,12 +1,12 @@
-import argparse
-from datetime import timedelta
 import time
 import uvicorn
-import requests
 import logging
-from bedrock_agentcore.services.identity import IdentityClient, UserTokenIdentifier
+import argparse
+import requests
 
+from datetime import timedelta
 from fastapi import FastAPI, HTTPException, status
+from bedrock_agentcore.services.identity import IdentityClient, UserTokenIdentifier
 
 
 OAUTH2_CALLBACK_SERVER_PORT = 9090
@@ -23,11 +23,11 @@ class OAuth2CallbackServer:
         self.user_token_identifier = None
         self.app = FastAPI()
         self._setup_routes()
-        
+    
     def _setup_routes(self):
-        @self.app.post("/store/token")
-        async def _store_user_token(_user_token_identifier: UserTokenIdentifier):
-            self.user_token_identifier = _user_token_identifier
+        @self.app.post(USER_IDENTIFIER_ENDPOINT)
+        async def _store_user_token(user_token_identifier_value: UserTokenIdentifier):
+            self.user_token_identifier = user_token_identifier_value
         
         @self.app.get(PING_ENDPOINT)
         async def _handle_ping():
@@ -38,11 +38,11 @@ class OAuth2CallbackServer:
             if not session_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="missing session_id query parameter"
+                    detail="Missing session_id query parameter"
                 )
             
             if not self.user_token_identifier:
-                logger.error('No configured UserToken')
+                logger.error('No configured user token identifier')
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Internal Server Error"
@@ -63,18 +63,21 @@ def get_oauth2_callback_url() -> str:
     return f"http://localhost:{OAUTH2_CALLBACK_SERVER_PORT}{OAUTH2_CALLBACK_ENDPOINT}"
 
 
-def store_token_in_oauth2_callback_server(user_token: str):
-    return requests.post(
-        f"http://localhost:{OAUTH2_CALLBACK_SERVER_PORT}{OAUTH2_CALLBACK_ENDPOINT}", 
-        json={"user_token": user_token},
-        timeout=2
-    )
+def store_token_in_oauth2_callback_server(user_token_value: str):
+    if user_token_value:
+        requests.post(
+            f"http://localhost:{OAUTH2_CALLBACK_SERVER_PORT}{USER_IDENTIFIER_ENDPOINT}", 
+            json={'user_token': user_token_value},
+            timeout=2
+        )
+    else:
+        logger.error("Ignoring: invalid user_token provided...")
 
 
-def wait_for_oauth2_server_to_be_ready(duration: timedelta = timedelta(seconds=30)) -> bool:
+def wait_for_oauth2_server_to_be_ready(duration: timedelta = timedelta(seconds=40)) -> bool:
     logger.info("Waiting for OAuth2 callback server to be ready...")
     timeout_in_seconds = duration.seconds
-        
+    
     start_time = time.time()
     while time.time() - start_time < timeout_in_seconds:
         try:
@@ -101,10 +104,13 @@ def main():
         "--region",
         type=str,
         required=True,
-        help="The AWS region to use (e.g. us-east-1)"
+        help="AWS Region (e.g. us-east-1)"
     )
     
     args = parser.parse_args()
     oauth2_callback_server = OAuth2CallbackServer(region=args.region)
     
     uvicorn.run(oauth2_callback_server.get_app(), host='127.0.0.1', port=OAUTH2_CALLBACK_SERVER_PORT)
+
+if __name__ == "__main__":
+    main()

@@ -9,6 +9,9 @@ from runtime import get_data_plane_endpoint
 import sys
 import yaml
 import boto3
+
+from oauth2_callback_server import store_token_in_oauth2_callback_server
+
 qualifier = "DEFAULT"
 # Configurable context window for chat history
 CONTEXT_WINDOW = 10  # Number of turns (user+assistant pairs) to include in context
@@ -590,6 +593,7 @@ def main():
                 context = build_context(st.session_state.messages, CONTEXT_WINDOW)
                 payload = json.dumps({"prompt": context})
                 bearer_token = st.session_state.get("cognito_access_token")
+                store_token_in_oauth2_callback_server(bearer_token)
                 
                 streaming_client = StreamingHttpBedrockAgentCoreClient(region)
                 
